@@ -1,556 +1,196 @@
-import json
 import streamlit as st
+import json
 
-st.set_page_config(
-    page_title="Wandering Heroes of Ogre Gate — Лист персонажа",
-    page_icon="⚔️",
-    layout="wide",
-)
+st.set_page_config(page_title="Wandering Heroes of Ogre Gate - Лист персонажа", layout="wide")
 
-SKILL_CATEGORIES = [
-    (
-        "combat",
-        "Боевые (Combat)",
-        [
-            ("arm_strike", "Удар рукой (Arm Strike)"),
-            ("blade", "Клинок (Blade)"),
-            ("bow", "Лук (Bow)"),
-            ("cudgel", "Дубина / Посох (Cudgel)"),
-            ("foot_strike", "Удар ногой (Foot Strike)"),
-            ("grapple", "Захват / Борьба (Grapple)"),
-            ("improvised_weapon", "Импровизированное оружие (Improvised Weapon)"),
-            ("polearm", "Древковое оружие (Polearm)"),
-            ("special_weapon", "Особое оружие (Special Weapon)"),
-            ("thrown_weapon", "Метательное оружие (Thrown Weapon)"),
-            ("whip", "Кнут / Цепь (Whip)"),
-        ],
-    ),
-    (
-        "specialist",
-        "Специальные (Specialist)",
-        [
-            ("command", "Командование (Command)"),
-            ("convince", "Убеждение (Convince)"),
-            ("disguise", "Маскировка (Disguise)"),
-            ("intimidate", "Запугивание (Intimidate)"),
-            ("seduce", "Соблазнение (Seduce)"),
-            ("sense", "Чутьё / Проницательность (Sense)"),
-            ("steal", "Воровство (Steal)"),
-            ("trade", "Торговля (Trade)"),
-        ],
-    ),
-    (
-        "mental",
-        "Ментальные (Mental)",
-        [
-            ("acting", "Актёрское мастерство (Acting)"),
-            ("animal_handling", "Обращение с животными (Animal Handling)"),
-            ("art", "Искусство (Art)"),
-            ("crafting", "Ремесло (Crafting)"),
-            ("gambling", "Азартные игры (Gambling)"),
-            ("healing", "Врачевание (Healing)"),
-            ("investigate", "Расследование (Investigate)"),
-            ("navigation", "Навигация (Navigation)"),
-            ("strategy", "Стратегия (Strategy)"),
-            ("survival", "Выживание (Survival)"),
-        ],
-    ),
-    (
-        "physical",
-        "Физические (Physical)",
-        [
-            ("acrobatics", "Акробатика (Acrobatics)"),
-            ("athletics", "Атлетика (Athletics)"),
-            ("endurance", "Выносливость (Endurance)"),
-            ("escape", "Побег / Освобождение (Escape)"),
-            ("feats_of_strength", "Подвиги силы (Feats of Strength)"),
-            ("ride", "Верховая езда (Ride)"),
-            ("sneak", "Скрытность / Красться (Sneak)"),
-        ],
-    ),
-    (
-        "knowledge",
-        "Знания (Knowledge)",
-        [
-            ("academic", "Академические (Academic)"),
-            ("folklore", "Фольклор (Folklore)"),
-            ("geography", "География (Geography)"),
-            ("history", "История (History)"),
-            ("law", "Закон (Law)"),
-            ("medicine", "Медицина (Medicine)"),
-            ("occult", "Оккультизм (Occult)"),
-            ("politics", "Политика (Politics)"),
-            ("underworld", "Преступный мир (Underworld)"),
-        ],
-    ),
-]
+# Инициализация хранилища данных в сессии
+if "char_data" not in st.session_state:
+    st.session_state.char_data = {}
 
-DEFENSES = [
-    ("hardiness", "Стойкость (Hardiness)", 3),
-    ("parry", "Парирование (Parry)", 3),
-    ("evade", "Уклонение (Evade)", 3),
-    ("stealth", "Скрытность (Stealth)", 6),
-    ("wits", "Смекалка (Wits)", 6),
-    ("resolve", "Решимость (Resolve)", 6),
-]
+# Функция для получения текущего значения (из загруженного JSON или по умолчанию)
+def get_val(key, default=""):
+    return st.session_state.char_data.get(key, default)
 
-ARTS = [
-    ("dianxue", "Дяньсюэ (Dianxue)"),
-    ("waijia", "Вайцзя (Waijia)"),
-    ("qinggong", "Цингун (Qinggong)"),
-    ("neigong", "Нэйгун (Neigong)"),
-]
+def get_num(key, default=0):
+    return st.session_state.char_data.get(key, default)
 
-TECHNIQUE_TYPES = ["Normal", "Counter", "Stance"]
+st.title("🐉 Создание персонажа: Wandering Heroes of Ogre Gate")
 
-
-def skill_cost(rank: int) -> int:
-    r = max(0, int(rank))
-    return r * (r + 1) // 2
-
-
-def default_state() -> dict:
-    state = {
-        "name": "",
-        "concept": "",
-        "sect": "",
-        "virtues": "",
-        "flaws": "",
-        "combat_techniques": "",
-        "qi": 1,
-        "wounds_current": 0,
-        "wounds_max_auto": True,
-        "wounds_max_manual": 3,
-        "imbalance_yin": 0,
-        "imbalance_yang": 0,
-        "family_title": "",
-        "family_description": "",
-        "grievances": "",
-        "silver": 0,
-        "copper": 0,
-        "gold": 0,
-        "jade": 0,
-        "equipment": "",
-        "xp_available": 0,
-        "xp_total": 0,
-        "notes": "",
-        "kung_fu_techniques": [
-            {"name": "", "type": "Normal", "notes": ""}
-        ],
-    }
-
-    for key, _, base_val in DEFENSES:
-        state[f"def_{key}_base"] = base_val
-        state[f"def_{key}_mod1"] = 0
-        state[f"def_{key}_mod2"] = 0
-        state[f"def_{key}_auto"] = True
-        state[f"def_{key}_manual"] = base_val
-
-    for key, _ in ARTS:
-        state[f"art_{key}"] = 0
-
-    for _, _, skills in SKILL_CATEGORIES:
-        for sk_key, _ in skills:
-            state[f"sk_{sk_key}_rank"] = 0
-            state[f"sk_{sk_key}_exp"] = ""
-
-    return state
-
-
-def init_session():
-    defaults = default_state()
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-
-def load_json_data(raw: dict):
-    defaults = default_state()
-    for k, default_val in defaults.items():
-        if k in raw:
-            val = raw[k]
-            if k.startswith("art_") and isinstance(val, bool):
-                val = 1 if val else 0
-            st.session_state[k] = val
-        else:
-            st.session_state[k] = default_val
-
-
-def export_json_data() -> str:
-    defaults = default_state()
-    data = {}
-    for k in defaults:
-        data[k] = st.session_state.get(k, defaults[k])
-    return json.dumps(data, ensure_ascii=False, indent=2)
-
-
-init_session()
-
-st.title("⚔️ Wandering Heroes of Ogre Gate — Лист персонажа")
-
+# Боковая панель для загрузки и сброса
 with st.sidebar:
-    st.header("📜 Управление листом")
-
-    st.subheader("Загрузить персонажа (JSON)")
-    uploaded = st.file_uploader(
-        "Выберите JSON-файл",
-        type=["json"],
-        label_visibility="collapsed",
-    )
-    if uploaded is not None:
-        file_id = f"{uploaded.name}_{uploaded.size}"
-        if st.session_state.get("_last_uploaded_id") != file_id:
-            try:
-                parsed = json.loads(uploaded.read().decode("utf-8"))
-                load_json_data(parsed)
-                st.session_state["_last_uploaded_id"] = file_id
-                st.success("Персонаж загружен!")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Ошибка чтения JSON: {exc}")
-
-    st.divider()
-
-    sidebar_points_placeholder = st.empty()
-
-    st.divider()
-
-    download_placeholder = st.empty()
-
-    st.divider()
-    if st.button("🗑️ Сбросить лист", use_container_width=True):
-        load_json_data(default_state())
-        st.session_state.pop("_last_uploaded_id", None)
+    st.header("📁 Управление файлом")
+    uploaded_file = st.file_uploader("Загрузить персонажа (JSON)", type=["json"])
+    if uploaded_file is not None:
+        try:
+            data = json.load(uploaded_file)
+            st.session_state.char_data = data
+            st.success("Персонаж успешно загружен!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Ошибка загрузки: {e}")
+            
+    if st.button("🗑️ Очистить все поля", use_container_width=True):
+        st.session_state.char_data = {}
         st.rerun()
 
-tab_main, tab_skills, tab_kungfu = st.tabs(
-    ["1. Основное, защиты и Ци", "2. Навыки (Skills)", "3. Кунг-фу, семья и имущество"]
-)
+# Создаем вкладки для удобства
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📜 Основное", 
+    "💪 Характеристики и Защита", 
+    "📖 Навыки", 
+    "👊 Боевые техники и Стойки", 
+    "🎒 Снаряжение и История"
+])
 
-with tab_main:
-    st.subheader("Общие сведения")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.text_input("Имя (Name)", key="name")
-    with c2:
-        st.text_input("Концепт (Concept)", key="concept")
-    with c3:
-        st.text_input("Секта / Школа (Sect)", key="sect")
+# Собираем все данные в один словарь при каждом изменении
+data = {}
 
-    c_v, c_f, c_ct = st.columns(3)
-    with c_v:
-        st.text_area("Добродетели (Virtues)", key="virtues", height=110)
-    with c_f:
-        st.text_area("Изъяны (Flaws)", key="flaws", height=110)
-    with c_ct:
-        st.text_area("Боевые приёмы (Combat Techniques)", key="combat_techniques", height=110)
+with tab1:
+    st.subheader("Личные данные")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        data["Name"] = st.text_input("Имя", value=get_val("Name"))
+        data["Nickname"] = st.text_input("Прозвище", value=get_val("Nickname"))
+        data["HtWt"] = st.text_input("Рост / Вес", value=get_val("HtWt"))
+        data["Homeland"] = st.text_input("Родина / Клан", value=get_val("Homeland"))
+        data["Occupation"] = st.text_input("Профессия", value=get_val("Occupation"))
+        data["Reputation"] = st.text_input("Репутация", value=get_val("Reputation"))
+    with col2:
+        data["MartialName"] = st.text_input("Боевое имя", value=get_val("MartialName"))
+        data["Sifu"] = st.text_input("Сифу (Учитель)", value=get_val("Sifu"))
+        data["Sex"] = st.text_input("Пол", value=get_val("Sex"))
+        data["Sect"] = st.text_input("Секта", value=get_val("Sect"))
+        data["Family"] = st.text_input("Семья", value=get_val("Family"))
+        data["Age"] = st.text_input("Возраст", value=get_val("Age"))
+    with col3:
+        data["Player"] = st.text_input("Игрок", value=get_val("Player"))
+        data["Title"] = st.text_input("Титулы", value=get_val("Title"))
+        data["Campaign"] = st.text_input("Кампания", value=get_val("Campaign"))
+    
+    st.divider()
+    st.subheader("Раны и Ци")
+    col_w1, col_w2, col_w3 = st.columns(3)
+    with col_w1:
+        data["MaxWounds"] = st.text_input("Макс. Раны", value=get_val("MaxWounds"))
+        data["CurrentWounds"] = st.text_input("Текущие Раны", value=get_val("CurrentWounds"))
+    with col_w2:
+        data["Qi"] = st.number_input("Уровень Ци (Qi)", min_value=1, max_value=6, value=get_num("Qi", 1))
+        data["Imbalance"] = st.text_input("Дисбаланс (Imbalance Rating)", value=get_val("Imbalance"))
+
+with tab2:
+    st.subheader("Защита (Defenses)")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        data["Hardiness"] = st.text_input("Стойкость (Hardiness)", value=get_val("Hardiness"))
+        data["Parry"] = st.text_input("Парирование (Parry)", value=get_val("Parry"))
+        data["Evade"] = st.text_input("Уклонение (Evade)", value=get_val("Evade"))
+    with col_d2:
+        data["Stealth"] = st.text_input("Скрытность (Stealth)", value=get_val("Stealth"))
+        data["Wits"] = st.text_input("Сообразительность (Wits)", value=get_val("Wits"))
+        data["Resolve"] = st.text_input("Решимость (Resolve)", value=get_val("Resolve"))
 
     st.divider()
+    st.subheader("Характеристики (Attributes)")
+    st.caption("Всего 3 кружка на навык (0-3)")
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
+        st.markdown("**Физические (Physical)**")
+        phys_skills = ["Athletics", "Swim", "Speed", "Muscle", "Endurance", "Ride", "Sail"]
+        for skill in phys_skills:
+            data[f"Phys_{skill}"] = st.slider(skill, 0, 3, value=get_num(f"Phys_{skill}"))
+    with col_a2:
+        st.markdown("**Знания (Knowledge)**")
+        know_skills = ["History 1", "History 2", "Creatures 1", "Creatures 2", "Places/Cultures 1", "Places/Cultures 2", 
+                       "Martial Disciplines 1", "Martial Disciplines 2", "Institutions 1", "Institutions 2", 
+                       "Language 1", "Language 2", "Read Script 1", "Read Script 2", "Religion/Gods 1", "Religion/Gods 2", "Classics 1", "Classics 2"]
+        for skill in know_skills:
+            data[f"Know_{skill}"] = st.slider(skill, 0, 3, value=get_num(f"Know_{skill}"))
 
-    col_def, col_qi = st.columns([3, 2], gap="large")
-
-    with col_def:
-        st.subheader("Защиты (Defenses)")
-        h1, h2, h3, h4, h5, h6 = st.columns([2.2, 1, 1, 1, 1.2, 0.9])
-        h1.caption("Защита")
-        h2.caption("База")
-        h3.caption("Мод. 1")
-        h4.caption("Мод. 2")
-        h5.caption("Итог")
-        h6.caption("Авто")
-
-        for key, label, _ in DEFENSES:
-            r1, r2, r3, r4, r5, r6 = st.columns([2.2, 1, 1, 1, 1.2, 0.9])
-            with r1:
-                st.markdown(f"**{label}**")
-            with r2:
-                base_v = st.number_input(
-                    f"База {key}",
-                    min_value=0,
-                    max_value=99,
-                    step=1,
-                    key=f"def_{key}_base",
-                    label_visibility="collapsed",
-                )
-            with r3:
-                mod1_v = st.number_input(
-                    f"Мод1 {key}",
-                    min_value=-99,
-                    max_value=99,
-                    step=1,
-                    key=f"def_{key}_mod1",
-                    label_visibility="collapsed",
-                )
-            with r4:
-                mod2_v = st.number_input(
-                    f"Мод2 {key}",
-                    min_value=-99,
-                    max_value=99,
-                    step=1,
-                    key=f"def_{key}_mod2",
-                    label_visibility="collapsed",
-                )
-            with r6:
-                is_auto = st.checkbox(
-                    "Авто",
-                    key=f"def_{key}_auto",
-                    label_visibility="collapsed",
-                )
-            calc_total = int(base_v) + int(mod1_v) + int(mod2_v)
-            with r5:
-                if is_auto:
-                    st.session_state[f"def_{key}_manual"] = calc_total
-                    st.number_input(
-                        f"Итог {key}",
-                        value=calc_total,
-                        disabled=True,
-                        key=f"_disp_def_{key}",
-                        label_visibility="collapsed",
-                    )
-                else:
-                    st.number_input(
-                        f"Итог {key}",
-                        min_value=0,
-                        max_value=999,
-                        step=1,
-                        key=f"def_{key}_manual",
-                        label_visibility="collapsed",
-                    )
-
-    with col_qi:
-        st.subheader("Ци и Раны (Qi & Wounds)")
-        qi_val = st.number_input(
-            "Уровень Ци (Qi)",
-            min_value=0,
-            max_value=20,
-            step=1,
-            key="qi",
-        )
-
-        w1, w2, w3 = st.columns([1.2, 1.2, 0.8])
-        with w1:
-            st.number_input(
-                "Текущие раны",
-                min_value=0,
-                max_value=999,
-                step=1,
-                key="wounds_current",
-            )
-        with w3:
-            st.write("")
-            st.write("")
-            w_auto = st.checkbox("Авто", key="wounds_max_auto")
-
-        auto_max_wounds = int(qi_val) * 2 + 1
-        with w2:
-            if w_auto:
-                st.session_state["wounds_max_manual"] = auto_max_wounds
-                st.number_input(
-                    "Макс. раны (Ци×2+1)",
-                    value=auto_max_wounds,
-                    disabled=True,
-                    key="_disp_wounds_max",
-                )
-            else:
-                st.number_input(
-                    "Макс. раны",
-                    min_value=0,
-                    max_value=999,
-                    step=1,
-                    key="wounds_max_manual",
-                )
-
-        st.divider()
-        st.subheader("Дисбаланс (Imbalance)")
-        imb1, imb2 = st.columns(2)
-        with imb1:
-            st.number_input(
-                "Инь (Yin)",
-                min_value=0,
-                max_value=50,
-                step=1,
-                key="imbalance_yin",
-            )
-        with imb2:
-            st.number_input(
-                "Ян (Yang)",
-                min_value=0,
-                max_value=50,
-                step=1,
-                key="imbalance_yang",
-            )
-
-        st.divider()
-        st.subheader("Пути / Искусства (Arts)")
-        art_cols = st.columns(2)
-        for idx, (art_key, art_label) in enumerate(ARTS):
-            with art_cols[idx % 2]:
-                st.number_input(
-                    art_label,
-                    min_value=0,
-                    max_value=99,
-                    step=1,
-                    key=f"art_{art_key}",
-                )
-
-with tab_skills:
-    st.caption(
-        "Стоимость рангов в категории: 1 ранг = 1 очко, 2 ранг = 3 очка, 3 ранг = 6 очков "
-        "(прогрессивная сумма: 1 + 2 + 3 + ...)."
-    )
-
-    category_totals = {}
-    left_cats = SKILL_CATEGORIES[:2]
-    right_cats = SKILL_CATEGORIES[2:]
-
-    col_left, col_right = st.columns(2, gap="large")
-
-    def render_skill_category(cat_key: str, cat_title: str, skills: list):
-        header_col, metric_col = st.columns([3, 1.3])
-        with header_col:
-            st.subheader(cat_title)
-        cat_metric_placeholder = metric_col.empty()
-
-        cat_sum = 0
-        for sk_key, sk_label in skills:
-            c_name, c_rank, c_cost, c_exp = st.columns([2.2, 1.1, 0.8, 1.7])
-            with c_name:
-                st.markdown(f"<div style='padding-top: 6px;'>{sk_label}</div>", unsafe_allow_html=True)
-            with c_rank:
-                rk = st.number_input(
-                    f"Ранг {sk_key}",
-                    min_value=0,
-                    max_value=20,
-                    step=1,
-                    key=f"sk_{sk_key}_rank",
-                    label_visibility="collapsed",
-                )
-            cost = skill_cost(rk)
-            cat_sum += cost
-            with c_cost:
-                st.markdown(f"<div style='padding-top: 6px; color: gray;'>{cost} очк.</div>", unsafe_allow_html=True)
-            with c_exp:
-                st.text_input(
-                    f"Специализация {sk_key}",
-                    placeholder="Специализация...",
-                    key=f"sk_{sk_key}_exp",
-                    label_visibility="collapsed",
-                )
-
-        cat_metric_placeholder.metric("Очки категории", cat_sum)
-        category_totals[cat_title] = cat_sum
-        st.divider()
-
-    with col_left:
-        for ck, ct, sks in left_cats:
-            render_skill_category(ck, ct, sks)
-
-    with col_right:
-        for ck, ct, sks in right_cats:
-            render_skill_category(ck, ct, sks)
-
-with tab_kungfu:
-    st.subheader("Техники Кунг-фу (Kung Fu Techniques)")
-    techniques = st.session_state["kung_fu_techniques"]
-
-    t_h1, t_h2, t_h3, t_h4 = st.columns([2.5, 1.3, 3.5, 0.5])
-    t_h1.caption("Название техники")
-    t_h2.caption("Тип (Normal / Counter / Stance)")
-    t_h3.caption("Эффект / Описание")
-    t_h4.caption("")
-
-    to_delete = None
-    for idx, tech in enumerate(techniques):
-        tc1, tc2, tc3, tc4 = st.columns([2.5, 1.3, 3.5, 0.5])
-        with tc1:
-            tech["name"] = st.text_input(
-                f"Техника имя {idx}",
-                value=tech.get("name", ""),
-                key=f"_kf_name_{idx}",
-                label_visibility="collapsed",
-            )
-        with tc2:
-            cur_type = tech.get("type", "Normal")
-            type_idx = TECHNIQUE_TYPES.index(cur_type) if cur_type in TECHNIQUE_TYPES else 0
-            tech["type"] = st.selectbox(
-                f"Техника тип {idx}",
-                TECHNIQUE_TYPES,
-                index=type_idx,
-                key=f"_kf_type_{idx}",
-                label_visibility="collapsed",
-            )
-        with tc3:
-            tech["notes"] = st.text_input(
-                f"Техника заметки {idx}",
-                value=tech.get("notes", ""),
-                key=f"_kf_notes_{idx}",
-                label_visibility="collapsed",
-            )
-        with tc4:
-            if len(techniques) > 1:
-                if st.button("✕", key=f"_kf_del_{idx}", help="Удалить технику"):
-                    to_delete = idx
-
-    if to_delete is not None:
-        techniques.pop(to_delete)
-        st.rerun()
-
-    if st.button("➕ Добавить технику кунг-фу"):
-        techniques.append({"name": "", "type": "Normal", "notes": ""})
-        st.rerun()
+with tab3:
+    st.subheader("Боевые навыки (Combat)")
+    combat_skills = ["Arm Strike", "Leg Strike", "Grapple", "Throw", "Light Melee", "Medium Melee", "Heavy Melee", "Small Ranged", "Large Ranged"]
+    col_c1, col_c2, col_c3 = st.columns(3)
+    for i, skill in enumerate(combat_skills):
+        with [col_c1, col_c2, col_c3][i % 3]:
+            data[f"Combat_{skill}"] = st.slider(skill, 0, 3, value=get_num(f"Combat_{skill}"))
 
     st.divider()
-
-    col_fam, col_gear = st.columns(2, gap="large")
-
-    with col_fam:
-        st.subheader("Семья и Обиды (Family & Grievances)")
-        st.text_input("Семья / Клан (Название)", key="family_title")
-        st.text_area("Описание семьи / Узы", key="family_description", height=120)
-        st.text_area("Обиды / Долги чести (Grievances)", key="grievances", height=120)
-
-    with col_gear:
-        st.subheader("Деньги (Money)")
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.number_input("Серебро (Silver)", min_value=0, step=1, key="silver")
-        with m2:
-            st.number_input("Медь (Copper)", min_value=0, step=1, key="copper")
-        with m3:
-            st.number_input("Золото (Gold)", min_value=0, step=1, key="gold")
-        with m4:
-            st.number_input("Нефрит (Jade)", min_value=0, step=1, key="jade")
-
-        st.subheader("Снаряжение (Equipment)")
-        st.text_area("Список снаряжения", key="equipment", height=130, label_visibility="collapsed")
-
-        st.subheader("Опыт (Experience)")
-        xp1, xp2 = st.columns(2)
-        with xp1:
-            st.number_input("Доступный опыт", min_value=0, step=1, key="xp_available")
-        with xp2:
-            st.number_input("Всего опыта", min_value=0, step=1, key="xp_total")
+    st.subheader("Специальные навыки (Specialist)")
+    spec_skills = ["Medicine", "Divination", "Meditation", "Talent 1", "Talent 2", "Trade 1", "Trade 2", 
+                   "Survival 1", "Survival 2", "Ritual 1", "Ritual 2", "Ritual 3"]
+    col_s1, col_s2, col_s3 = st.columns(3)
+    for i, skill in enumerate(spec_skills):
+        with [col_s1, col_s2, col_s3][i % 3]:
+            data[f"Spec_{skill}"] = st.slider(skill, 0, 3, value=get_num(f"Spec_{skill}"))
 
     st.divider()
-    st.subheader("Заметки (Notes)")
-    st.text_area("Дополнительные заметки", key="notes", height=120, label_visibility="collapsed")
+    st.subheader("Ментальные навыки (Mental)")
+    ment_skills = ["Command", "Persuade", "Deception", "Empathy", "Reasoning", "Detect"]
+    col_m1, col_m2, col_m3 = st.columns(3)
+    for i, skill in enumerate(ment_skills):
+        with [col_m1, col_m2, col_m3][i % 3]:
+            data[f"Ment_{skill}"] = st.slider(skill, 0, 3, value=get_num(f"Ment_{skill}"))
 
-with sidebar_points_placeholder.container():
-    st.subheader("📊 Потраченные очки навыков")
-    st.caption("Расчёт: 1 ранг = 1, 2 ранг = 3, 3 ранг = 6")
-    total_skill_points = 0
-    for cat_title, pts in category_totals.items():
-        short_title = cat_title.split(" (")[0]
-        st.write(f"**{short_title}:** {pts} очк.")
-        total_skill_points += pts
-    st.metric("Всего очков в навыки", total_skill_points)
+    st.divider()
+    st.subheader("Экспертиза (Expertise)")
+    data["Expertise_General"] = st.text_area("Общая экспертиза", value=get_val("Expertise_General"), height=100)
 
-safe_name = (st.session_state.get("name") or "character").strip().replace(" ", "_")
-download_placeholder.download_button(
-    label="💾 Скачать персонажа (JSON)",
-    data=export_json_data(),
-    file_name=f"{safe_name}.json",
+with tab4:
+    st.subheader("Кунг-фу техники (Kung Fu Techniques)")
+    col_t1, col_t2, col_t3 = st.columns(3)
+    with col_t1:
+        data["Tech_Normal"] = st.text_area("Обычные (Normal)", value=get_val("Tech_Normal"), height=300)
+    with col_t2:
+        data["Tech_Counter"] = st.text_area("Контратаки (Counter)", value=get_val("Tech_Counter"), height=300)
+    with col_t3:
+        data["Tech_Stance"] = st.text_area("Стойки (Stance)", value=get_val("Tech_Stance"), height=300)
+
+with tab5:
+    st.subheader("Снаряжение (Equipment)")
+    data["Equipment"] = st.text_area("Инвентарь", value=get_val("Equipment"), height=200)
+
+    st.divider()
+    st.subheader("Деньги (Money)")
+    col_mo1, col_mo2, col_mo3, col_mo4 = st.columns(4)
+    with col_mo1: data["Money_Taels"] = st.text_input("Taels", value=get_val("Money_Taels"))
+    with col_mo2: data["Money_Imperials"] = st.text_input("Imperials", value=get_val("Money_Imperials"))
+    with col_mo3: data["Money_Spades"] = st.text_input("Spades", value=get_val("Money_Spades"))
+    with col_mo4: data["Money_Liangs"] = st.text_input("Liangs (Бумажные)", value=get_val("Money_Liangs"))
+
+    st.divider()
+    st.subheader("Семья (Family)")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        data["Family_Siblings"] = st.text_input("Кол-во братьев/сестер", value=get_val("Family_Siblings"))
+        data["Family_BirthOrder"] = st.text_input("Порядок рождения", value=get_val("Family_BirthOrder"))
+        data["Family_Mother"] = st.text_input("Мать", value=get_val("Family_Mother"))
+        data["Family_Father"] = st.text_input("Отец", value=get_val("Family_Father"))
+    with col_f2:
+        data["Family_Sister"] = st.text_input("Сестра(ы)", value=get_val("Family_Sister"))
+        data["Family_Brother"] = st.text_input("Брат(ы)", value=get_val("Family_Brother"))
+        data["Family_Sworn"] = st.text_input("Названная семья", value=get_val("Family_Sworn"))
+        data["Family_Other"] = st.text_area("Другое", value=get_val("Family_Other"), height=68)
+
+    st.divider()
+    st.subheader("Опыт и Обиды (Experience & Grudges)")
+    col_e1, col_e2 = st.columns(2)
+    with col_e1:
+        data["Experience"] = st.text_area("Опыт", value=get_val("Experience"), height=150)
+    with col_e2:
+        data["Grudges"] = st.text_area("Обиды / Враги", value=get_val("Grudges"), height=150)
+        data["Flaws"] = st.text_area("Изъяны (Flaws)", value=get_val("Flaws"), height=68)
+
+# Обновляем данные в сессии
+st.session_state.char_data.update(data)
+
+# Кнопка скачивания JSON
+st.divider()
+json_str = json.dumps(st.session_state.char_data, ensure_ascii=False, indent=4)
+st.download_button(
+    label="💾 Скачать персонажа в JSON",
+    data=json_str,
+    file_name=f"{st.session_state.char_data.get('Name', 'hero')}_ogre_gate.json",
     mime="application/json",
-    use_container_width=True,
     type="primary",
+    use_container_width=True
 )
