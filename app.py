@@ -1,150 +1,196 @@
 import json
+from copy import deepcopy
 import streamlit as st
 
 st.set_page_config(
     page_title="Wandering Heroes of Ogre Gate — Лист персонажа",
-    page_icon="⚔️",
+    page_icon="🥋",
     layout="wide",
 )
 
-# --- Справочные структуры полей на основе оригинального листа ---
-DEFENSES_CONFIG = [
-    ("hardiness", "Стойкость (Hardiness)", 3),
-    ("parry", "Парирование (Parry)", 3),
-    ("evade", "Уклонение (Evade)", 3),
-    ("stealth", "Скрытность (Stealth)", 6),
-    ("wits", "Смекалка (Wits)", 6),
-    ("resolve", "Решимость (Resolve)", 6),
+SKILL_GROUPS = {
+    "combat": {
+        "title": "Боевые (Combat)",
+        "fixed": [
+            ("arm_strike", "Удар рукой (Arm Strike)"),
+            ("leg_strike", "Удар ногой (Leg Strike)"),
+            ("grapple", "Захват (Grapple)"),
+            ("throw", "Бросок (Throw)"),
+            ("light_melee", "Лёгкое ближнее (Light Melee)"),
+            ("medium_melee", "Среднее ближнее (Medium Melee)"),
+            ("heavy_melee", "Тяжёлое ближнее (Heavy Melee)"),
+            ("small_ranged", "Малое дальнобойное (Small Ranged)"),
+            ("large_ranged", "Большое дальнобойное (Large Ranged)"),
+        ],
+        "custom": [],
+    },
+    "specialist": {
+        "title": "Специальные (Specialist)",
+        "fixed": [
+            ("medicine", "Медицина (Medicine)"),
+            ("divination", "Прорицание (Divination)"),
+            ("meditation", "Медитация (Meditation)"),
+        ],
+        "custom": [
+            ("talent_1", "Талант 1 (Talent)"),
+            ("talent_2", "Талант 2 (Talent)"),
+            ("trade_1", "Ремесло 1 (Trade)"),
+            ("trade_2", "Ремесло 2 (Trade)"),
+            ("survival_1", "Выживание 1 (Survival)"),
+            ("survival_2", "Выживание 2 (Survival)"),
+            ("ritual_1", "Ритуал 1 (Ritual)"),
+            ("ritual_2", "Ритуал 2 (Ritual)"),
+            ("ritual_3", "Ритуал 3 (Ritual)"),
+        ],
+    },
+    "mental": {
+        "title": "Ментальные (Mental)",
+        "fixed": [
+            ("command", "Командование (Command)"),
+            ("persuade", "Убеждение (Persuade)"),
+            ("deception", "Обман (Deception)"),
+            ("empathy", "Эмпатия (Empathy)"),
+            ("reasoning", "Логика (Reasoning)"),
+            ("detect", "Наблюдательность (Detect)"),
+        ],
+        "custom": [],
+    },
+    "physical": {
+        "title": "Физические (Physical)",
+        "fixed": [
+            ("athletics", "Атлетика (Athletics)"),
+            ("swim", "Плавание (Swim)"),
+            ("speed", "Скорость (Speed)"),
+            ("muscle", "Сила (Muscle)"),
+            ("endurance", "Выносливость (Endurance)"),
+            ("ride", "Верховая езда (Ride)"),
+            ("sail", "Мореходство (Sail)"),
+        ],
+        "custom": [],
+    },
+    "knowledge": {
+        "title": "Знания (Knowledge)",
+        "fixed": [],
+        "custom": [
+            ("history_1", "История 1 (History)"),
+            ("history_2", "История 2 (History)"),
+            ("creatures_1", "Существа 1 (Creatures)"),
+            ("creatures_2", "Существа 2 (Creatures)"),
+            ("places_1", "Места и культуры 1 (Places/Cultures)"),
+            ("places_2", "Места и культуры 2 (Places/Cultures)"),
+            ("disciplines_1", "Боевые школы 1 (Martial Disciplines)"),
+            ("disciplines_2", "Боевые школы 2 (Martial Disciplines)"),
+            ("institutions_1", "Институты 1 (Institutions)"),
+            ("institutions_2", "Институты 2 (Institutions)"),
+            ("language_1", "Язык 1 (Language)"),
+            ("language_2", "Язык 2 (Language)"),
+            ("script_1", "Письменность 1 (Read Script)"),
+            ("script_2", "Письменность 2 (Read Script)"),
+            ("religion_1", "Религия и боги 1 (Religion/Gods)"),
+            ("religion_2", "Религия и боги 2 (Religion/Gods)"),
+            ("classics_1", "Классические тексты 1 (Classics)"),
+            ("classics_2", "Классические тексты 2 (Classics)"),
+        ],
+    },
+}
+
+DEFENSES_META = [
+    ("hardiness", "Стойкость (Hardiness)", 3, 4),
+    ("parry", "Парирование (Parry)", 3, 4),
+    ("evade", "Уклонение (Evade)", 3, 4),
+    ("stealth", "Скрытность (Stealth)", 6, 1),
+    ("wits", "Смекалка (Wits)", 6, 1),
+    ("resolve", "Решимость (Resolve)", 6, 1),
 ]
 
-COMBAT_SKILLS = [
-    ("arm_strike", "Удар рукой (Arm Strike)"),
-    ("leg_strike", "Удар ногой (Leg Strike)"),
-    ("grapple", "Захват (Grapple)"),
-    ("throw", "Бросок (Throw)"),
-    ("light_melee", "Лёгкое ближнее (Light Melee)"),
-    ("medium_melee", "Среднее ближнее (Medium Melee)"),
-    ("heavy_melee", "Тяжёлое ближнее (Heavy Melee)"),
-    ("small_ranged", "Малое дальнобойное (Small Ranged)"),
-    ("large_ranged", "Крупное дальнобойное (Large Ranged)"),
-]
 
-SPECIALIST_FIXED = [
-    ("medicine", "Медицина (Medicine)"),
-    ("divination", "Предсказание (Divination)"),
-    ("meditation", "Медитация (Meditation)"),
-]
-
-SPECIALIST_CUSTOM = [
-    ("talent_1", "Талант 1 (Talent)"),
-    ("talent_2", "Талант 2 (Talent)"),
-    ("trade_1", "Ремесло 1 (Trade)"),
-    ("trade_2", "Ремесло 2 (Trade)"),
-    ("survival_1", "Выживание 1 (Survival)"),
-    ("survival_2", "Выживание 2 (Survival)"),
-    ("ritual_1", "Ритуал 1 (Ritual)"),
-    ("ritual_2", "Ритуал 2 (Ritual)"),
-    ("ritual_3", "Ритуал 3 (Ritual)"),
-]
-
-MENTAL_SKILLS = [
-    ("command", "Командование (Command)"),
-    ("persuade", "Убеждение (Persuade)"),
-    ("deception", "Обман (Deception)"),
-    ("empathy", "Эмпатия (Empathy)"),
-    ("reasoning", "Логика (Reasoning)"),
-    ("detect", "Проницательность / Поиск (Detect)"),
-]
-
-PHYSICAL_SKILLS = [
-    ("athletics", "Атлетика (Athletics)"),
-    ("swim", "Плавание (Swim)"),
-    ("speed", "Скорость (Speed)"),
-    ("muscle", "Мускулы (Muscle)"),
-    ("endurance", "Выносливость (Endurance)"),
-    ("ride", "Верховая езда (Ride)"),
-    ("sail", "Мореходство (Sail)"),
-]
-
-KNOWLEDGE_GROUPS = [
-    ("history_1", "История 1 (History)"),
-    ("history_2", "История 2 (History)"),
-    ("creatures_1", "Существа 1 (Creatures)"),
-    ("creatures_2", "Существа 2 (Creatures)"),
-    ("places_1", "Места и культуры 1 (Places/Cultures)"),
-    ("places_2", "Места и культуры 2 (Places/Cultures)"),
-    ("disciplines_1", "Боевые школы 1 (Martial Disciplines)"),
-    ("disciplines_2", "Боевые школы 2 (Martial Disciplines)"),
-    ("institutions_1", "Организации 1 (Institutions)"),
-    ("institutions_2", "Организации 2 (Institutions)"),
-    ("language_1", "Язык 1 (Language)"),
-    ("language_2", "Язык 2 (Language)"),
-    ("script_1", "Письменность 1 (Read Script)"),
-    ("script_2", "Письменность 2 (Read Script)"),
-    ("religion_1", "Религия и боги 1 (Religion/Gods)"),
-    ("religion_2", "Религия и боги 2 (Religion/Gods)"),
-    ("classics_1", "Классические трактаты 1 (Classics)"),
-    ("classics_2", "Классические трактаты 2 (Classics)"),
-]
-
-INTERNAL_ARTS = [
-    ("dianxue", "Дяньсюэ (Dianxue)"),
-    ("waijia", "Вайцзя (Waijia)"),
-    ("qinggong", "Цингун (Qinggong)"),
-    ("neigong", "Нэйгун (Neigong)"),
-]
+def triangular_cost(rank: int) -> int:
+    r = max(0, int(rank))
+    return r * (r + 1) // 2
 
 
-def get_default_data() -> dict:
-    data = {
-        # Личная информация
-        "name": "",
-        "martial_name": "",
-        "nickname": "",
-        "sifu": "",
-        "player": "",
-        "ht_wt": "",
-        "sex": "",
-        "titles": "",
-        "campaign": "",
-        "homeland_clan": "",
-        "sect": "",
-        "occupation": "",
-        "family_short": "",
-        "reputation": "",
-        "age": "",
-        # Здоровье и Ци
-        "qi": 1,
-        "max_wounds_auto": True,
-        "max_wounds": 3,
-        "current_wounds": 0,
-        "imbalance_rating": 0,
-        "imbalance_points": 0,
-        "imbalance_bonus_qi": 1,
-        # Защиты
-        "defenses": {
-            key: {"base": base, "mod1": 0, "mod2": 0, "auto": True, "total": base}
-            for key, _, base in DEFENSES_CONFIG
+def calc_group_points(char_data: dict, group_key: str) -> int:
+    group = SKILL_GROUPS[group_key]
+    total = 0
+    for key, _ in group["fixed"]:
+        total += triangular_cost(char_data["skills"][group_key][key])
+    for key, _ in group["custom"]:
+        total += triangular_cost(char_data["skills"][group_key][key]["rank"])
+    return total
+
+
+def calc_all_points(char_data: dict) -> dict:
+    by_group = {k: calc_group_points(char_data, k) for k in SKILL_GROUPS}
+    return {
+        "by_group": by_group,
+        "total": sum(by_group.values()),
+    }
+
+
+def get_default_character() -> dict:
+    skills = {}
+    expertise = {}
+    for group_key, group in SKILL_GROUPS.items():
+        skills[group_key] = {}
+        for key, _ in group["fixed"]:
+            skills[group_key][key] = 0
+        for key, _ in group["custom"]:
+            skills[group_key][key] = {"spec": "", "rank": 0}
+        expertise[group_key] = ""
+
+    defenses = {}
+    for key, _, base_val, _ in DEFENSES_META:
+        defenses[key] = {
+            "base": base_val,
+            "mod1": 0,
+            "mod2": 0,
+            "auto": True,
+            "manual_total": base_val,
+        }
+
+    return {
+        "meta": {"system": "Wandering Heroes of Ogre Gate", "version": 2},
+        "identity": {
+            "name": "",
+            "martial_name": "",
+            "nickname": "",
+            "sifu": "",
+            "player": "",
+            "ht_wt": "",
+            "sex": "",
+            "titles": "",
+            "campaign": "",
+            "homeland_clan": "",
+            "sect": "",
+            "occupation": "",
+            "family_name": "",
+            "reputation": "",
+            "age": "",
         },
-        # Навыки
-        "combat_skills": {key: 0 for key, _ in COMBAT_SKILLS},
-        "combat_expertise": "",
-        "specialist_fixed": {key: 0 for key, _ in SPECIALIST_FIXED},
-        "specialist_custom": {key: {"spec": "", "val": 0} for key, _ in SPECIALIST_CUSTOM},
-        "specialist_expertise": "",
-        "mental_skills": {key: 0 for key, _ in MENTAL_SKILLS},
-        "mental_expertise": "",
-        "physical_skills": {key: 0 for key, _ in PHYSICAL_SKILLS},
-        "physical_expertise": "",
-        "knowledge_skills": {key: {"spec": "", "val": 0} for key, _ in KNOWLEDGE_GROUPS},
-        "knowledge_expertise": "",
-        # Внутренние стили и техники
-        "internal_arts": {key: 0 for key, _ in INTERNAL_ARTS},
+        "defenses": defenses,
+        "wounds": {
+            "auto_max": True,
+            "manual_max": 3,
+            "current": 3,
+        },
+        "qi": 1,
+        "imbalance": {
+            "rating": 0,
+            "points": 0,
+            "bonus_for_qi": [0, 0, 0, 0, 0, 0],
+        },
+        "inner_arts": {
+            "dianxue": "",
+            "waijia": "",
+            "qinggong": "",
+            "neigong": "",
+        },
         "combat_techniques": "",
         "flaws": "",
-        # Семья, обиды, снаряжение, деньги, опыт
+        "skills": skills,
+        "expertise": expertise,
         "family": {
-            "siblings": "",
+            "num_siblings": "",
             "birth_order": "",
             "mother": "",
             "father": "",
@@ -163,525 +209,389 @@ def get_default_data() -> dict:
             "paper_currency": "",
         },
         "experience": "",
-        # Техники кунг-фу (таблица)
         "kung_fu_techniques": [
-            {"normal": "", "counter": "", "stance": ""} for _ in range(8)
+            {"normal": "", "counter": "", "stance": ""},
+            {"normal": "", "counter": "", "stance": ""},
+            {"normal": "", "counter": "", "stance": ""},
         ],
     }
-    return data
 
 
-def sync_state_from_dict(data: dict):
-    defaults = get_default_data()
+def merge_with_default(loaded: dict) -> dict:
+    base = get_default_character()
 
-    # Простые поля
-    simple_keys = [
-        "name", "martial_name", "nickname", "sifu", "player",
-        "ht_wt", "sex", "titles", "campaign", "homeland_clan",
-        "sect", "occupation", "family_short", "reputation", "age",
-        "qi", "max_wounds_auto", "max_wounds", "current_wounds",
-        "imbalance_rating", "imbalance_points", "imbalance_bonus_qi",
-        "combat_expertise", "specialist_expertise", "mental_expertise",
-        "physical_expertise", "knowledge_expertise",
-        "combat_techniques", "flaws", "grudges", "equipment", "experience",
-    ]
-    for k in simple_keys:
-        st.session_state[f"w_{k}"] = data.get(k, defaults[k])
+    def deep_update(dst, src):
+        for k, v in src.items():
+            if k in dst and isinstance(dst[k], dict) and isinstance(v, dict):
+                deep_update(dst[k], v)
+            else:
+                dst[k] = v
 
-    # Защиты
-    def_data = data.get("defenses", {})
-    for key, _, base in DEFENSES_CONFIG:
-        item = def_data.get(key, defaults["defenses"][key])
-        st.session_state[f"w_def_{key}_base"] = int(item.get("base", base))
-        st.session_state[f"w_def_{key}_mod1"] = int(item.get("mod1", 0))
-        st.session_state[f"w_def_{key}_mod2"] = int(item.get("mod2", 0))
-        st.session_state[f"w_def_{key}_auto"] = bool(item.get("auto", True))
-        st.session_state[f"w_def_{key}_total"] = int(item.get("total", base))
-
-    # Навыки
-    for key, _ in COMBAT_SKILLS:
-        st.session_state[f"w_cskill_{key}"] = int(data.get("combat_skills", {}).get(key, 0))
-
-    for key, _ in SPECIALIST_FIXED:
-        st.session_state[f"w_sskill_{key}"] = int(data.get("specialist_fixed", {}).get(key, 0))
-
-    for key, _ in SPECIALIST_CUSTOM:
-        item = data.get("specialist_custom", {}).get(key, {"spec": "", "val": 0})
-        st.session_state[f"w_scust_{key}_spec"] = item.get("spec", "")
-        st.session_state[f"w_scust_{key}_val"] = int(item.get("val", 0))
-
-    for key, _ in MENTAL_SKILLS:
-        st.session_state[f"w_mskill_{key}"] = int(data.get("mental_skills", {}).get(key, 0))
-
-    for key, _ in PHYSICAL_SKILLS:
-        st.session_state[f"w_pskill_{key}"] = int(data.get("physical_skills", {}).get(key, 0))
-
-    for key, _ in KNOWLEDGE_GROUPS:
-        item = data.get("knowledge_skills", {}).get(key, {"spec": "", "val": 0})
-        st.session_state[f"w_kskill_{key}_spec"] = item.get("spec", "")
-        st.session_state[f"w_kskill_{key}_val"] = int(item.get("val", 0))
-
-    for key, _ in INTERNAL_ARTS:
-        st.session_state[f"w_art_{key}"] = int(data.get("internal_arts", {}).get(key, 0))
-
-    # Семья и деньги
-    fam = data.get("family", {})
-    for fk in defaults["family"]:
-        st.session_state[f"w_fam_{fk}"] = fam.get(fk, "")
-
-    mon = data.get("money", {})
-    for mk in defaults["money"]:
-        st.session_state[f"w_mon_{mk}"] = mon.get(mk, "")
-
-    # Техники кунг-фу
-    kft = data.get("kung_fu_techniques", defaults["kung_fu_techniques"])
-    if not isinstance(kft, list) or len(kft) == 0:
-        kft = defaults["kung_fu_techniques"]
-    st.session_state["kung_fu_rows"] = len(kft)
-    for idx, row in enumerate(kft):
-        st.session_state[f"w_kft_{idx}_normal"] = row.get("normal", "")
-        st.session_state[f"w_kft_{idx}_counter"] = row.get("counter", "")
-        st.session_state[f"w_kft_{idx}_stance"] = row.get("stance", "")
+    if isinstance(loaded, dict):
+        deep_update(base, loaded)
+    return base
 
 
-def collect_data_from_state() -> dict:
-    defenses = {}
-    for key, _, base in DEFENSES_CONFIG:
-        b = st.session_state.get(f"w_def_{key}_base", base)
-        m1 = st.session_state.get(f"w_def_{key}_mod1", 0)
-        m2 = st.session_state.get(f"w_def_{key}_mod2", 0)
-        auto = st.session_state.get(f"w_def_{key}_auto", True)
-        tot = (b + m1 + m2) if auto else st.session_state.get(f"w_def_{key}_total", b + m1 + m2)
-        defenses[key] = {
-            "base": b,
-            "mod1": m1,
-            "mod2": m2,
-            "auto": auto,
-            "total": tot,
-        }
+if "char" not in st.session_state:
+    st.session_state.char = get_default_character()
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
-    qi_val = st.session_state.get("w_qi", 1)
-    mw_auto = st.session_state.get("w_max_wounds_auto", True)
-    mw_val = (qi_val * 2 + 1) if mw_auto else st.session_state.get("w_max_wounds", qi_val * 2 + 1)
+char = st.session_state.char
+points_summary = calc_all_points(char)
 
-    rows_count = st.session_state.get("kung_fu_rows", 8)
-    kft_list = []
-    for idx in range(rows_count):
-        kft_list.append({
-            "normal": st.session_state.get(f"w_kft_{idx}_normal", ""),
-            "counter": st.session_state.get(f"w_kft_{idx}_counter", ""),
-            "stance": st.session_state.get(f"w_kft_{idx}_stance", ""),
-        })
-
-    return {
-        "system": "Wandering Heroes of Ogre Gate",
-        "name": st.session_state.get("w_name", ""),
-        "martial_name": st.session_state.get("w_martial_name", ""),
-        "nickname": st.session_state.get("w_nickname", ""),
-        "sifu": st.session_state.get("w_sifu", ""),
-        "player": st.session_state.get("w_player", ""),
-        "ht_wt": st.session_state.get("w_ht_wt", ""),
-        "sex": st.session_state.get("w_sex", ""),
-        "titles": st.session_state.get("w_titles", ""),
-        "campaign": st.session_state.get("w_campaign", ""),
-        "homeland_clan": st.session_state.get("w_homeland_clan", ""),
-        "sect": st.session_state.get("w_sect", ""),
-        "occupation": st.session_state.get("w_occupation", ""),
-        "family_short": st.session_state.get("w_family_short", ""),
-        "reputation": st.session_state.get("w_reputation", ""),
-        "age": st.session_state.get("w_age", ""),
-        "qi": qi_val,
-        "max_wounds_auto": mw_auto,
-        "max_wounds": mw_val,
-        "current_wounds": st.session_state.get("w_current_wounds", 0),
-        "imbalance_rating": st.session_state.get("w_imbalance_rating", 0),
-        "imbalance_points": st.session_state.get("w_imbalance_points", 0),
-        "imbalance_bonus_qi": st.session_state.get("w_imbalance_bonus_qi", 1),
-        "defenses": defenses,
-        "combat_skills": {k: st.session_state.get(f"w_cskill_{k}", 0) for k, _ in COMBAT_SKILLS},
-        "combat_expertise": st.session_state.get("w_combat_expertise", ""),
-        "specialist_fixed": {k: st.session_state.get(f"w_sskill_{k}", 0) for k, _ in SPECIALIST_FIXED},
-        "specialist_custom": {
-            k: {
-                "spec": st.session_state.get(f"w_scust_{k}_spec", ""),
-                "val": st.session_state.get(f"w_scust_{k}_val", 0),
-            }
-            for k, _ in SPECIALIST_CUSTOM
-        },
-        "specialist_expertise": st.session_state.get("w_specialist_expertise", ""),
-        "mental_skills": {k: st.session_state.get(f"w_mskill_{k}", 0) for k, _ in MENTAL_SKILLS},
-        "mental_expertise": st.session_state.get("w_mental_expertise", ""),
-        "physical_skills": {k: st.session_state.get(f"w_pskill_{k}", 0) for k, _ in PHYSICAL_SKILLS},
-        "physical_expertise": st.session_state.get("w_physical_expertise", ""),
-        "knowledge_skills": {
-            k: {
-                "spec": st.session_state.get(f"w_kskill_{k}_spec", ""),
-                "val": st.session_state.get(f"w_kskill_{k}_val", 0),
-            }
-            for k, _ in KNOWLEDGE_GROUPS
-        },
-        "knowledge_expertise": st.session_state.get("w_knowledge_expertise", ""),
-        "internal_arts": {k: st.session_state.get(f"w_art_{k}", 0) for k, _ in INTERNAL_ARTS},
-        "combat_techniques": st.session_state.get("w_combat_techniques", ""),
-        "flaws": st.session_state.get("w_flaws", ""),
-        "family": {
-            fk: st.session_state.get(f"w_fam_{fk}", "")
-            for fk in get_default_data()["family"]
-        },
-        "grudges": st.session_state.get("w_grudges", ""),
-        "equipment": st.session_state.get("w_equipment", ""),
-        "money": {
-            mk: st.session_state.get(f"w_mon_{mk}", "")
-            for mk in get_default_data()["money"]
-        },
-        "experience": st.session_state.get("w_experience", ""),
-        "kung_fu_techniques": kft_list,
-    }
-
-
-# Инициализация при первом запуске
-if "initialized" not in st.session_state:
-    sync_state_from_dict(get_default_data())
-    st.session_state["initialized"] = True
-    st.session_state["last_uploaded_id"] = None
-
-# --- Боковая панель: Импорт / Экспорт JSON и Сброс ---
+# --- Боковая панель: Экспорт / Импорт / Сводка очков / Сброс ---
 with st.sidebar:
-    st.header("📁 Файл персонажа")
+    st.header("📜 Управление листом")
 
-    uploaded_file = st.file_uploader(
-        "Загрузить персонажа (.json)",
-        type=["json"],
-        help="Выберите ранее сохранённый JSON-файл листа персонажа.",
-    )
+    st.subheader("📊 Потраченные очки навыков")
+    st.caption("Расчёт: 1 ранг = 1, 2 ранг = 3, 3 ранг = 6")
+    for g_key, g_info in SKILL_GROUPS.items():
+        short_title = g_info["title"].split(" (")[0]
+        st.write(f"**{short_title}:** {points_summary['by_group'][g_key]} очк.")
+    st.metric("Всего очков в навыках", points_summary["total"])
 
-    if uploaded_file is not None:
-        file_id = f"{uploaded_file.name}_{uploaded_file.size}"
-        if st.session_state.get("last_uploaded_id") != file_id:
-            try:
-                loaded_json = json.loads(uploaded_file.getvalue().decode("utf-8"))
-                sync_state_from_dict(loaded_json)
-                st.session_state["last_uploaded_id"] = file_id
-                st.success("Персонаж успешно загружен!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Ошибка чтения JSON: {e}")
+    st.divider()
 
-    current_char = collect_data_from_state()
-    char_filename = (current_char["name"] or current_char["martial_name"] or "hero").strip()
-    char_filename = "".join(c if c.isalnum() or c in ("-", "_", " ") else "_" for c in char_filename)
+    file_label = char["identity"]["name"].strip() or "whog_character"
+    safe_name = "".join(c if c.isalnum() or c in ("_", "-") else "_" for c in file_label)
 
+    json_payload = json.dumps(char, ensure_ascii=False, indent=2)
     st.download_button(
-        label="💾 Скачать JSON персонажа",
-        data=json.dumps(current_char, ensure_ascii=False, indent=2),
-        file_name=f"{char_filename}.json",
+        label="💾 Скачать персонажа (JSON)",
+        data=json_payload.encode("utf-8"),
+        file_name=f"{safe_name}.json",
         mime="application/json",
         use_container_width=True,
+        type="primary",
     )
 
     st.divider()
+    st.subheader("📂 Загрузить из JSON")
+    uploaded = st.file_uploader(
+        "Выберите файл .json",
+        type=["json"],
+        key=f"json_loader_{st.session_state.uploader_key}",
+    )
+    if uploaded is not None:
+        try:
+            raw_data = json.load(uploaded)
+            st.session_state.char = merge_with_default(raw_data)
+            st.session_state.uploader_key += 1
+            st.rerun()
+        except Exception as err:
+            st.error(f"Ошибка чтения JSON: {err}")
+
+    st.divider()
     if st.button("🗑️ Очистить весь лист", use_container_width=True):
-        sync_state_from_dict(get_default_data())
-        st.session_state["last_uploaded_id"] = None
+        st.session_state.char = get_default_character()
+        st.session_state.uploader_key += 1
         st.rerun()
 
-# --- Заголовок приложения ---
-st.title("⚔️ Wandering Heroes of Ogre Gate")
-st.caption("Интерактивный конструктор и лист персонажа")
+st.title("🥋 Wandering Heroes of Ogre Gate — Лист персонажа")
 
-tab_front, tab_back = st.tabs(["📜 Лицевая сторона (Характеристики и навыки)", "📖 Оборотная сторона (Семья, снаряжение и кунг-фу)"])
+tab_front, tab_back = st.tabs(["📄 Лицевая сторона (Основные параметры и навыки)", "📜 Обратная сторона (Семья, снаряжение и техники кунг-фу)"])
 
 # ==============================================================================
 # ВКЛАДКА 1: ЛИЦЕВАЯ СТОРОНА ЛИСТА
 # ==============================================================================
 with tab_front:
-    # 1. Основная информация
-    with st.container(border=True):
-        st.subheader("Общие сведения")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.text_input("Имя (Name)", key="w_name")
-            st.text_input("Прозвище (Nickname)", key="w_nickname")
-            st.text_input("Рост / Вес (Ht./Wt.)", key="w_ht_wt")
-            st.text_input("Родина / Клан (Homeland/Clan)", key="w_homeland_clan")
-            st.text_input("Род занятий (Occupation)", key="w_occupation")
-            st.text_input("Репутация (Reputation)", key="w_reputation")
-        with c2:
-            st.text_input("Боевое имя (Martial Name)", key="w_martial_name")
-            st.text_input("Наставник / Сифу (Sifu)", key="w_sifu")
-            st.text_input("Пол (Sex)", key="w_sex")
-            st.text_input("Секта / Школа (Sect)", key="w_sect")
-            st.text_input("Семья (Family)", key="w_family_short")
-            st.text_input("Возраст (Age)", key="w_age")
-        with c3:
-            st.text_input("Игрок (Player)", key="w_player")
-            st.text_input("Титулы (Title(s))", key="w_titles")
-            st.text_input("Кампания (Campaign)", key="w_campaign")
+    st.subheader("Общие сведения")
+    r1 = st.columns([2, 2, 1.5])
+    char["identity"]["name"] = r1[0].text_input("Имя (Name)", value=char["identity"]["name"])
+    char["identity"]["martial_name"] = r1[1].text_input("Боевое имя (Martial Name)", value=char["identity"]["martial_name"])
+    char["identity"]["nickname"] = r1[2].text_input("Прозвище (Nickname)", value=char["identity"]["nickname"])
 
-    # 2. Три колонки как на оригинальном листе
-    col_left, col_mid, col_right = st.columns([1.15, 0.95, 1.15])
+    r2 = st.columns([2, 2, 1.5])
+    char["identity"]["sifu"] = r2[0].text_input("Наставник / Сифу (Sifu)", value=char["identity"]["sifu"])
+    char["identity"]["player"] = r2[1].text_input("Игрок (Player)", value=char["identity"]["player"])
+    char["identity"]["campaign"] = r2[2].text_input("Кампания (Campaign)", value=char["identity"]["campaign"])
 
-    # --- ЛЕВАЯ КОЛОНКА: Защиты, Боевые, Специальные, Ментальные ---
+    r3 = st.columns([1.2, 1, 2, 1.8])
+    char["identity"]["ht_wt"] = r3[0].text_input("Рост / Вес (Ht./Wt.)", value=char["identity"]["ht_wt"])
+    char["identity"]["sex"] = r3[1].text_input("Пол (Sex)", value=char["identity"]["sex"])
+    char["identity"]["titles"] = r3[2].text_input("Титулы (Title(s))", value=char["identity"]["titles"])
+    char["identity"]["age"] = r3[3].text_input("Возраст (Age)", value=char["identity"]["age"])
+
+    r4 = st.columns([1.5, 1.5, 1.5, 1.5, 1.5])
+    char["identity"]["homeland_clan"] = r4[0].text_input("Родина / Клан (Homeland/Clan)", value=char["identity"]["homeland_clan"])
+    char["identity"]["sect"] = r4[1].text_input("Секта / Школа (Sect)", value=char["identity"]["sect"])
+    char["identity"]["occupation"] = r4[2].text_input("Род занятий (Occupation)", value=char["identity"]["occupation"])
+    char["identity"]["family_name"] = r4[3].text_input("Семья (Family)", value=char["identity"]["family_name"])
+    char["identity"]["reputation"] = r4[4].text_input("Репутация (Reputation)", value=char["identity"]["reputation"])
+
+    st.divider()
+
+    col_left, col_mid, col_right = st.columns([1.15, 1.1, 1.15], gap="medium")
+
+    # --- ЛЕВАЯ КОЛОНКА: ЗАЩИТЫ + БОЕВЫЕ + СПЕЦИАЛЬНЫЕ + МЕНТАЛЬНЫЕ ---
     with col_left:
         with st.container(border=True):
             st.subheader("🛡️ Защиты (Defenses)")
-            st.caption("Формула: База + Мод. 1 + Мод. 2 = Итог")
-            for key, label, default_base in DEFENSES_CONFIG:
-                st.markdown(f"**{label}**")
-                d1, d2, d3, d4, d5 = st.columns([1, 1, 1, 1.15, 0.85])
-                with d1:
-                    b_val = st.number_input("База", min_value=0, max_value=30, key=f"w_def_{key}_base")
-                with d2:
-                    m1_val = st.number_input("+Мод1", min_value=-10, max_value=20, key=f"w_def_{key}_mod1")
-                with d3:
-                    m2_val = st.number_input("+Мод2", min_value=-10, max_value=20, key=f"w_def_{key}_mod2")
-                with d5:
-                    auto_def = st.checkbox("Авто", key=f"w_def_{key}_auto", help="Авторасчет суммы")
-                with d4:
-                    calc_def = b_val + m1_val + m2_val
-                    if auto_def:
-                        st.session_state[f"w_def_{key}_total"] = calc_def
-                        st.number_input("Итог", value=calc_def, disabled=True, key=f"w_def_{key}_disp")
-                    else:
-                        st.number_input("Итог", min_value=0, max_value=50, key=f"w_def_{key}_total")
+            st.caption("Формула: База + Мод. 1 + Мод. 2 (снимите «Авто» для ручного ввода)")
+            for d_key, d_label, default_base, max_m1 in DEFENSES_META:
+                d_obj = char["defenses"][d_key]
+                c_name, c_base, c_m1, c_m2, c_tot, c_auto = st.columns([2.2, 1.0, 1.0, 1.0, 1.1, 0.9])
+                c_name.markdown(f"**{d_label}**")
+                d_obj["base"] = c_base.number_input(
+                    "База", value=int(d_obj["base"]), step=1, key=f"def_base_{d_key}", label_visibility="collapsed"
+                )
+                d_obj["mod1"] = c_m1.number_input(
+                    "Мод 1", value=int(d_obj["mod1"]), step=1, key=f"def_m1_{d_key}", label_visibility="collapsed"
+                )
+                d_obj["mod2"] = c_m2.number_input(
+                    "Мод 2", value=int(d_obj["mod2"]), step=1, key=f"def_m2_{d_key}", label_visibility="collapsed"
+                )
+                d_obj["auto"] = c_auto.checkbox("Авто", value=bool(d_obj["auto"]), key=f"def_auto_{d_key}")
 
-        with st.container(border=True):
-            st.subheader("🗡️ Боевые навыки (Combat)")
-            for key, label in COMBAT_SKILLS:
-                sc1, sc2 = st.columns([2.2, 1])
-                with sc1:
-                    st.markdown(f"<div style='padding-top:8px'>{label}</div>", unsafe_allow_html=True)
-                with sc2:
-                    st.number_input(label, min_value=0, max_value=3, label_visibility="collapsed", key=f"w_cskill_{key}")
-            st.text_area("Специализации (Expertise — Combat)", height=80, key="w_combat_expertise")
+                calc_val = int(d_obj["base"]) + int(d_obj["mod1"]) + int(d_obj["mod2"])
+                if d_obj["auto"]:
+                    d_obj["manual_total"] = calc_val
+                    c_tot.number_input(
+                        "Итог", value=calc_val, disabled=True, key=f"def_tot_disp_{d_key}", label_visibility="collapsed"
+                    )
+                else:
+                    d_obj["manual_total"] = c_tot.number_input(
+                        "Итог", value=int(d_obj["manual_total"]), step=1, key=f"def_tot_man_{d_key}", label_visibility="collapsed"
+                    )
 
-        with st.container(border=True):
-            st.subheader("🔮 Специальные навыки (Specialist)")
-            for key, label in SPECIALIST_FIXED:
-                sc1, sc2 = st.columns([2.2, 1])
-                with sc1:
-                    st.markdown(f"<div style='padding-top:8px'>{label}</div>", unsafe_allow_html=True)
-                with sc2:
-                    st.number_input(label, min_value=0, max_value=3, label_visibility="collapsed", key=f"w_sskill_{key}")
+        def render_skill_block(group_key: str):
+            group = SKILL_GROUPS[group_key]
+            with st.container(border=True):
+                h_col1, h_col2 = st.columns([2.4, 1.2])
+                h_col1.subheader(group["title"])
+                current_pts = calc_group_points(char, group_key)
+                h_col2.metric("Очки категории", f"{current_pts}")
 
-            for key, label in SPECIALIST_CUSTOM:
-                sc1, sc2 = st.columns([2.2, 1])
-                with sc1:
-                    st.text_input(label, placeholder=label, label_visibility="collapsed", key=f"w_scust_{key}_spec")
-                with sc2:
-                    st.number_input(f"{label} ранг", min_value=0, max_value=3, label_visibility="collapsed", key=f"w_scust_{key}_val")
-            st.text_area("Специализации (Expertise — Specialist)", height=80, key="w_specialist_expertise")
+                for s_key, s_label in group["fixed"]:
+                    sc1, sc2, sc3 = st.columns([2.6, 1.3, 0.7])
+                    sc1.write(s_label)
+                    rank_val = int(char["skills"][group_key][s_key])
+                    new_rank = sc2.radio(
+                        s_label,
+                        options=[0, 1, 2, 3],
+                        index=rank_val,
+                        horizontal=True,
+                        key=f"sk_{group_key}_{s_key}",
+                        label_visibility="collapsed",
+                    )
+                    char["skills"][group_key][s_key] = new_rank
+                    sc3.caption(f"{triangular_cost(new_rank)} очк.")
 
-        with st.container(border=True):
-            st.subheader("🧠 Ментальные навыки (Mental)")
-            for key, label in MENTAL_SKILLS:
-                sc1, sc2 = st.columns([2.2, 1])
-                with sc1:
-                    st.markdown(f"<div style='padding-top:8px'>{label}</div>", unsafe_allow_html=True)
-                with sc2:
-                    st.number_input(label, min_value=0, max_value=3, label_visibility="collapsed", key=f"w_mskill_{key}")
-            st.text_area("Специализации (Expertise — Mental)", height=80, key="w_mental_expertise")
+                for s_key, s_label in group["custom"]:
+                    sc1, sc2, sc3 = st.columns([2.6, 1.3, 0.7])
+                    char["skills"][group_key][s_key]["spec"] = sc1.text_input(
+                        s_label,
+                        value=char["skills"][group_key][s_key]["spec"],
+                        placeholder=s_label,
+                        key=f"sk_spec_{group_key}_{s_key}",
+                        label_visibility="collapsed",
+                    )
+                    rank_val = int(char["skills"][group_key][s_key]["rank"])
+                    new_rank = sc2.radio(
+                        f"{s_label}_rank",
+                        options=[0, 1, 2, 3],
+                        index=rank_val,
+                        horizontal=True,
+                        key=f"sk_rank_{group_key}_{s_key}",
+                        label_visibility="collapsed",
+                    )
+                    char["skills"][group_key][s_key]["rank"] = new_rank
+                    sc3.caption(f"{triangular_cost(new_rank)} очк.")
 
-    # --- ЦЕНТРАЛЬНАЯ КОЛОНКА: Внутренние стили, Дисбаланс, Ци, Боевые техники ---
+                char["expertise"][group_key] = st.text_area(
+                    f"Специализации — {group['title']} (Expertise)",
+                    value=char["expertise"][group_key],
+                    height=75,
+                    key=f"exp_{group_key}",
+                )
+
+        render_skill_block("combat")
+        render_skill_block("specialist")
+        render_skill_block("mental")
+
+    # --- ЦЕНТРАЛЬНАЯ КОЛОНКА: ВНУТРЕННИЕ ИСКУССТВА + ДИСБАЛАНС + ЦИ + БОЕВЫЕ ТЕХНИКИ ---
     with col_mid:
         with st.container(border=True):
-            st.subheader("☯️ Внутренние стили (Internal Arts)")
+            st.subheader("☯️ Внутренние школы (Inner Arts)")
             ia1, ia2 = st.columns(2)
-            for idx, (key, label) in enumerate(INTERNAL_ARTS):
-                target_col = ia1 if idx % 2 == 0 else ia2
-                with target_col:
-                    st.number_input(label, min_value=0, max_value=6, key=f"w_art_{key}")
+            char["inner_arts"]["dianxue"] = ia1.text_input("Дяньсюэ (Dianxue)", value=char["inner_arts"]["dianxue"])
+            char["inner_arts"]["waijia"] = ia2.text_input("Вайцзя (Waijia)", value=char["inner_arts"]["waijia"])
+            ia3, ia4 = st.columns(2)
+            char["inner_arts"]["qinggong"] = ia3.text_input("Цингун (Qinggong)", value=char["inner_arts"]["qinggong"])
+            char["inner_arts"]["neigong"] = ia4.text_input("Нэйгун (Neigong)", value=char["inner_arts"]["neigong"])
 
         with st.container(border=True):
-            st.subheader("⚖️ Рейтинг дисбаланса (Imbalance Rating)")
-            st.number_input(
-                "Значение дисбаланса (от -5 до +5)",
-                min_value=-5,
-                max_value=5,
-                key="w_imbalance_rating",
+            st.subheader("🔥 Уровень Ци (Qi)")
+            char["qi"] = st.radio(
+                "Значение Ци (1–6)",
+                options=[1, 2, 3, 4, 5, 6],
+                index=max(0, min(5, int(char["qi"]) - 1)),
+                horizontal=True,
             )
 
         with st.container(border=True):
-            st.subheader("✨ Уровень Ци (Qi)")
-            qi_val = st.number_input("Ци (Qi, 1–6)", min_value=1, max_value=6, key="w_qi")
+            st.subheader("⚖️ Дисбаланс (Imbalance Rating)")
+            char["imbalance"]["rating"] = st.number_input(
+                "Рейтинг дисбаланса (Imbalance Rating)",
+                min_value=0,
+                max_value=20,
+                value=int(char["imbalance"]["rating"]),
+                step=1,
+            )
 
         with st.container(border=True):
-            st.subheader("📜 Боевые техники (Combat Techniques)")
-            st.text_area(
-                "Список известных боевых техник",
+            st.subheader("⚔️ Боевые техники (Combat Techniques)")
+            char["combat_techniques"] = st.text_area(
+                "Список боевых техник",
+                value=char["combat_techniques"],
                 height=520,
                 label_visibility="collapsed",
-                placeholder="Запишите здесь боевые техники персонажа...",
-                key="w_combat_techniques",
+                placeholder="Запишите изученные боевые техники, эффекты и требования...",
             )
 
-    # --- ПРАВАЯ КОЛОНКА: Раны, Физические, Знания, Недостатки ---
+    # --- ПРАВАЯ КОЛОНКА: РАНЫ + ФИЗИЧЕСКИЕ + ЗНАНИЯ + НЕДОСТАТКИ ---
     with col_right:
         with st.container(border=True):
-            st.subheader("🩸 Раны (Wounds)")
-            w1, w2, w3 = st.columns([1.2, 0.8, 1.2])
-            with w3:
-                mw_auto = st.checkbox("Авто (Ци×2+1)", key="w_max_wounds_auto")
-            with w1:
-                calc_mw = qi_val * 2 + 1
-                if mw_auto:
-                    st.session_state["w_max_wounds"] = calc_mw
-                    st.number_input("Макс. ран (Max Wounds)", value=calc_mw, disabled=True, key="w_max_wounds_disp")
-                else:
-                    st.number_input("Макс. ран (Max Wounds)", min_value=1, max_value=50, key="w_max_wounds")
-            with w2:
-                st.number_input("Текущие раны", min_value=0, max_value=50, key="w_current_wounds")
-
-        with st.container(border=True):
-            st.subheader("💪 Физические навыки (Physical)")
-            for key, label in PHYSICAL_SKILLS:
-                sc1, sc2 = st.columns([2.2, 1])
-                with sc1:
-                    st.markdown(f"<div style='padding-top:8px'>{label}</div>", unsafe_allow_html=True)
-                with sc2:
-                    st.number_input(label, min_value=0, max_value=3, label_visibility="collapsed", key=f"w_pskill_{key}")
-            st.text_area("Специализации (Expertise — Physical)", height=80, key="w_physical_expertise")
-
-        with st.container(border=True):
-            st.subheader("📚 Знания (Knowledge)")
-            for key, label in KNOWLEDGE_GROUPS:
-                sc1, sc2 = st.columns([2.2, 1])
-                with sc1:
-                    st.text_input(label, placeholder=label, label_visibility="collapsed", key=f"w_kskill_{key}_spec")
-                with sc2:
-                    st.number_input(f"{label} ранг", min_value=0, max_value=3, label_visibility="collapsed", key=f"w_kskill_{key}_val")
-            st.text_area("Специализации (Expertise — Knowledge)", height=80, key="w_knowledge_expertise")
-
-        with st.container(border=True):
-            st.subheader("⚠️ Недостатки и изъяны (Flaws)")
-            st.text_area(
-                "Недостатки персонажа",
-                height=160,
-                label_visibility="collapsed",
-                placeholder="Запишите недостатки (Flaws)...",
-                key="w_flaws",
+            st.subheader("❤️ Раны (Wounds)")
+            w1, w2, w3 = st.columns([1.3, 1.3, 0.9])
+            char["wounds"]["auto_max"] = w3.checkbox(
+                "Авто (Ци×2+1)", value=bool(char["wounds"]["auto_max"]), key="wounds_auto"
+            )
+            calc_wounds = int(char["qi"]) * 2 + 1
+            if char["wounds"]["auto_max"]:
+                char["wounds"]["manual_max"] = calc_wounds
+                w1.number_input("Макс. ран (Max Wounds)", value=calc_wounds, disabled=True, key="wounds_max_disp")
+            else:
+                char["wounds"]["manual_max"] = w1.number_input(
+                    "Макс. ран (Max Wounds)", min_value=1, value=int(char["wounds"]["manual_max"]), step=1, key="wounds_max_man"
+                )
+            char["wounds"]["current"] = w2.number_input(
+                "Текущие раны (Current Wounds)", value=int(char["wounds"]["current"]), step=1, key="wounds_curr"
             )
 
+        render_skill_block("physical")
+        render_skill_block("knowledge")
+
+        with st.container(border=True):
+            st.subheader("⛓️ Недостатки и изъяны (Flaws)")
+            char["flaws"] = st.text_area(
+                "Недостатки (Flaws)",
+                value=char["flaws"],
+                height=140,
+                label_visibility="collapsed",
+                placeholder="Опишите недостатки персонажа...",
+            )
 
 # ==============================================================================
-# ВКЛАДКА 2: ОБОРОТНАЯ СТОРОНА ЛИСТА
+# ВКЛАДКА 2: ОБРАТНАЯ СТОРОНА ЛИСТА
 # ==============================================================================
 with tab_back:
-    top_c1, top_c2, top_c3 = st.columns([1, 1, 1.3])
+    top_c1, top_c2, top_c3 = st.columns([1, 1, 1.3], gap="medium")
 
     with top_c1:
         with st.container(border=True):
             st.subheader("🏮 Семья (Family)")
-            st.text_input("Кол-во братьев/сестёр (No. Siblings)", key="w_fam_siblings")
-            st.text_input("Порядок рождения (Birth Order)", key="w_fam_birth_order")
-            st.text_input("Мать (Mother)", key="w_fam_mother")
-            st.text_input("Отец (Father)", key="w_fam_father")
-            st.text_input("Сёстры (Sister(s))", key="w_fam_sisters")
-            st.text_input("Братья (Brother(s))", key="w_fam_brothers")
-            st.text_area("Названая семья (Sworn Family)", height=70, key="w_fam_sworn_family")
-            st.text_area("Прочие родственники (Other(s))", height=70, key="w_fam_others")
+            f_sub1, f_sub2 = st.columns(2)
+            char["family"]["num_siblings"] = f_sub1.text_input("Кол-во братьев/сестёр (No. Siblings)", value=char["family"]["num_siblings"])
+            char["family"]["birth_order"] = f_sub2.text_input("Порядок рождения (Birth Order)", value=char["family"]["birth_order"])
+            char["family"]["mother"] = st.text_input("Мать (Mother)", value=char["family"]["mother"])
+            char["family"]["father"] = st.text_input("Отец (Father)", value=char["family"]["father"])
+            char["family"]["sisters"] = st.text_input("Сёстры (Sister(s))", value=char["family"]["sisters"])
+            char["family"]["brothers"] = st.text_input("Братья (Brother(s))", value=char["family"]["brothers"])
+            char["family"]["sworn_family"] = st.text_input("Названая семья (Sworn Family)", value=char["family"]["sworn_family"])
+            char["family"]["others"] = st.text_area("Прочие родственники (Other(s))", value=char["family"]["others"], height=70)
 
         with st.container(border=True):
             st.subheader("💰 Деньги (Money)")
-            st.text_input("Таэли (Taels)", key="w_mon_taels")
-            st.text_input("Империалы (Imperials)", key="w_mon_imperials")
-            st.text_input("Лопаты / Монеты (Spades)", key="w_mon_spades")
-            st.text_input("Ляны (Liangs)", key="w_mon_liangs")
-            st.text_area("Бумажные деньги (Paper Currency)", height=70, key="w_mon_paper_currency")
+            m1, m2 = st.columns(2)
+            char["money"]["taels"] = m1.text_input("Таэли (Taels)", value=char["money"]["taels"])
+            char["money"]["imperials"] = m2.text_input("Империалы (Imperials)", value=char["money"]["imperials"])
+            m3, m4 = st.columns(2)
+            char["money"]["spades"] = m3.text_input("Монеты-лопаты (Spades)", value=char["money"]["spades"])
+            char["money"]["liangs"] = m4.text_input("Ляны (Liangs)", value=char["money"]["liangs"])
+            char["money"]["paper_currency"] = st.text_input("Бумажные ассигнации (Paper Currency)", value=char["money"]["paper_currency"])
 
     with top_c2:
         with st.container(border=True):
-            st.subheader("💢 Обиды и враги (Grudges)")
-            st.text_area(
-                "Обиды",
-                height=420,
+            st.subheader("💢 Обиды и вендетты (Grudges)")
+            char["grudges"] = st.text_area(
+                "Обиды (Grudges)",
+                value=char["grudges"],
+                height=395,
                 label_visibility="collapsed",
-                placeholder="Запишите кровную месть, долги чести и обиды...",
-                key="w_grudges",
+                placeholder="Кто, за что и кому должен отомстить...",
             )
 
         with st.container(border=True):
-            st.subheader("⭐ Опыт (Experience)")
-            st.text_area(
-                "Опыт",
-                height=195,
+            st.subheader("✨ Опыт (Experience)")
+            char["experience"] = st.text_area(
+                "Опыт (Experience)",
+                value=char["experience"],
+                height=165,
                 label_visibility="collapsed",
-                placeholder="Текущий / потраченный опыт...",
-                key="w_experience",
+                placeholder="Текущий / всего заработано очков опыта, заметки по тратам...",
             )
 
     with top_c3:
         with st.container(border=True):
             st.subheader("🎒 Снаряжение (Equipment)")
-            st.text_area(
-                "Снаряжение",
-                height=485,
+            char["equipment"] = st.text_area(
+                "Снаряжение (Equipment)",
+                value=char["equipment"],
+                height=425,
                 label_visibility="collapsed",
-                placeholder="Оружие, доспехи, артефакты и вещи...",
-                key="w_equipment",
+                placeholder="Оружие, доспехи, целебные травы, артефакты, поклажа...",
             )
 
         with st.container(border=True):
             st.subheader("🌀 Очки дисбаланса (Imbalance Points)")
-            ip1, ip2 = st.columns(2)
-            with ip1:
-                st.number_input(
-                    "Очки дисбаланса (0–10)",
-                    min_value=0,
-                    max_value=10,
-                    key="w_imbalance_points",
-                )
-            with ip2:
-                st.number_input(
-                    "Бонус за уровень Ци (1–6)",
-                    min_value=1,
-                    max_value=6,
-                    key="w_imbalance_bonus_qi",
+            char["imbalance"]["points"] = st.slider(
+                "Накопленные очки дисбаланса (0–10)",
+                min_value=0,
+                max_value=10,
+                value=int(char["imbalance"]["points"]),
+            )
+            st.caption("Бонус за уровень Ци (Bonus for Qi Level 1–6)")
+            b_cols = st.columns(6)
+            for idx in range(6):
+                char["imbalance"]["bonus_for_qi"][idx] = b_cols[idx].number_input(
+                    f"Ци {idx + 1}",
+                    value=int(char["imbalance"]["bonus_for_qi"][idx]),
+                    step=1,
+                    key=f"imb_bonus_{idx}",
                 )
 
-    # Таблица техник кунг-фу внизу оборотной стороны
+    st.divider()
+
     with st.container(border=True):
-        h_col, btn_add, btn_rem = st.columns([3, 1, 1])
-        with h_col:
-            st.subheader("🥋 Техники кунг-фу (Kung Fu Techniques)")
-        with btn_add:
-            if st.button("➕ Добавить строку", use_container_width=True):
-                idx = st.session_state["kung_fu_rows"]
-                st.session_state[f"w_kft_{idx}_normal"] = ""
-                st.session_state[f"w_kft_{idx}_counter"] = ""
-                st.session_state[f"w_kft_{idx}_stance"] = ""
-                st.session_state["kung_fu_rows"] = idx + 1
-                st.rerun()
-        with btn_rem:
-            if st.button("➖ Убрать строку", use_container_width=True) and st.session_state["kung_fu_rows"] > 1:
-                st.session_state["kung_fu_rows"] -= 1
-                st.rerun()
+        h_kf1, h_kf2 = st.columns([3, 1])
+        h_kf1.subheader("🐉 Техники кунг-фу (Kung Fu Techniques)")
+        if h_kf2.button("➕ Добавить строку техники", use_container_width=True):
+            char["kung_fu_techniques"].append({"normal": "", "counter": "", "stance": ""})
+            st.rerun()
 
-        th1, th2, th3 = st.columns(3)
-        th1.markdown("**Обычная техника (Normal)**")
-        th2.markdown("**Контратака (Counter)**")
-        th3.markdown("**Стойка (Stance)**")
+        col_h1, col_h2, col_h3, col_h4 = st.columns([2.2, 1.5, 1.5, 0.4])
+        col_h1.markdown("**Обычная техника (Normal)**")
+        col_h2.markdown("**Контратака (Counter)**")
+        col_h3.markdown("**Стойка (Stance)**")
 
-        for idx in range(st.session_state["kung_fu_rows"]):
-            r1, r2, r3 = st.columns(3)
-            with r1:
-                st.text_input(
-                    f"Normal {idx+1}",
-                    label_visibility="collapsed",
-                    placeholder="Название и эффект...",
-                    key=f"w_kft_{idx}_normal",
-                )
-            with r2:
-                st.text_input(
-                    f"Counter {idx+1}",
-                    label_visibility="collapsed",
-                    placeholder="Контрприём...",
-                    key=f"w_kft_{idx}_counter",
-                )
-            with r3:
-                st.text_input(
-                    f"Stance {idx+1}",
-                    label_visibility="collapsed",
-                    placeholder="Стойка...",
-                    key=f"w_kft_{idx}_stance",
-                )
+        to_delete = None
+        for i, row in enumerate(char["kung_fu_techniques"]):
+            c1, c2, c3, c4 = st.columns([2.2, 1.5, 1.5, 0.4])
+            row["normal"] = c1.text_input(
+                f"Normal {i}", value=row["normal"], key=f"kf_norm_{i}", label_visibility="collapsed", placeholder="Название и эффект..."
+            )
+            row["counter"] = c2.text_input(
+                f"Counter {i}", value=row["counter"], key=f"kf_cnt_{i}", label_visibility="collapsed", placeholder="Контратака..."
+            )
+            row["stance"] = c3.text_input(
+                f"Stance {i}", value=row["stance"], key=f"kf_stn_{i}", label_visibility="collapsed", placeholder="Стойка..."
+            )
+            if len(char["kung_fu_techniques"]) > 1:
+                if c4.button("✖", key=f"kf_del_{i}", help="Удалить строку"):
+                    to_delete = i
+
+        if to_delete is not None:
+            char["kung_fu_techniques"].pop(to_delete)
+            st.rerun()
